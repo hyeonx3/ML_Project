@@ -1,0 +1,292 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "authorship_tag": "ABX9TyMWFRrHpmrl6ace9uOo8Dnu",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/hyeonx3/ML_Project/blob/Sehyeon/1.%20Mutinomial%20Logistic%20Regression\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "rE0EO40KihXT"
+      },
+      "outputs": [],
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.pipeline import Pipeline\n",
+        "from sklearn.preprocessing import StandardScaler\n",
+        "from sklearn.linear_model import LogisticRegression\n",
+        "from sklearn.metrics import classification_report, confusion_matrix"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "url = \"https://raw.githubusercontent.com/hyeonx3/ML_Project/main/dataset/spotify_songs_with_genre_int.csv\"\n",
+        "df = pd.read_csv(url)"
+      ],
+      "metadata": {
+        "id": "8XHAk0RsjJCH"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "target_col = \"genre_int\"\n",
+        "features = [\"track_popularity\",\"danceability\",\"energy\",\"key\",\"loudness\",\"mode\", \"speechiness\",\"acousticness\",\"instrumentalness\",\"liveness\",\"valence\", \"tempo\",\"duration_ms\"]\n",
+        "\n",
+        "# 숫자 컬럼만 사용 (곡 이름 같은 문자열 컬럼 자동 제외)\n",
+        "numeric_cols = df[features].select_dtypes(include=[\"int64\", \"float64\"]).columns.tolist()\n",
+        "\n",
+        "X = df[numeric_cols]\n",
+        "y = df[target_col]"
+      ],
+      "metadata": {
+        "id": "0eXRbGaqmH1j"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# 3. train / temp (70 / 30)\n",
+        "X_train, X_temp, y_train, y_temp = train_test_split(\n",
+        "    X, y,\n",
+        "    test_size=0.30,\n",
+        "    stratify=y,\n",
+        "    random_state=42\n",
+        ")\n",
+        "\n",
+        "# 4. temp → val / test (15 / 15)\n",
+        "X_val, X_test, y_val, y_test = train_test_split(\n",
+        "    X_temp, y_temp,\n",
+        "    test_size=0.50,\n",
+        "    stratify=y_temp,\n",
+        "    random_state=42\n",
+        ")\n",
+        "\n",
+        "print(\"train:\", X_train.shape)\n",
+        "print(\"val  :\", X_val.shape)\n",
+        "print(\"test :\", X_test.shape)\n",
+        "\n",
+        "c_candidates = [0.01, 0.1, 1, 10, 100]\n",
+        "best_c = None\n",
+        "best_val_acc = -1\n",
+        "\n",
+        "for c in c_candidates:\n",
+        "    model = Pipeline([\n",
+        "        (\"scaler\", StandardScaler()),\n",
+        "        (\"clf\", LogisticRegression(\n",
+        "            C=c,\n",
+        "            multi_class=\"multinomial\",\n",
+        "            solver=\"lbfgs\",\n",
+        "            max_iter=1000\n",
+        "        ))\n",
+        "    ])\n",
+        "    model.fit(X_train, y_train)\n",
+        "    val_acc = model.score(X_val, y_val)\n",
+        "    print(f\"C={c} → val acc={val_acc:.4f}\")\n",
+        "\n",
+        "    if val_acc > best_val_acc:\n",
+        "        best_val_acc = val_acc\n",
+        "        best_c = c\n",
+        "\n",
+        "print(f\"\\n[선택] val 기준으로 가장 좋은 C는 {best_c} (acc={best_val_acc:.4f})\")\n",
+        "\n",
+        "# ------------------------------------------------\n",
+        "# 4. 가장 좋은 C로 다시 모델 만들어서\n",
+        "#    train 전체에 fit → test에서 평가\n",
+        "#    (val을 합쳐서 다시 학습해도 되지만 지금은 간단 버전)\n",
+        "# ------------------------------------------------\n",
+        "final_model = Pipeline([\n",
+        "    (\"scaler\", StandardScaler()),\n",
+        "    (\"clf\", LogisticRegression(\n",
+        "        C=best_c,\n",
+        "        multi_class=\"multinomial\",\n",
+        "        solver=\"lbfgs\",\n",
+        "        max_iter=1000\n",
+        "    ))\n",
+        "])\n",
+        "\n",
+        "final_model.fit(X_train, y_train)\n",
+        "\n",
+        "# 5. 테스트셋 예측\n",
+        "y_pred = final_model.predict(X_test)\n",
+        "\n",
+        "# 6. 혼동 행렬 만들기\n",
+        "cm = confusion_matrix(y_test, y_pred)\n",
+        "labels = np.unique(y)   # 장르 인덱스들\n",
+        "\n",
+        "print(\"\\n=== Confusion matrix (raw) ===\")\n",
+        "print(cm)\n",
+        "\n",
+        "# 7. 좀 더 친절하게: 행=실제, 열=예측 이라고 써주고\n",
+        "print(\"\\n행 = 실제 장르, 열 = 예측 장르\")\n",
+        "print(\"labels:\", labels)\n",
+        "\n",
+        "# 8. 판다스로 보기 좋게\n",
+        "cm_df = pd.DataFrame(cm, index=[f\"true_{l}\" for l in labels],\n",
+        "                        columns=[f\"pred_{l}\" for l in labels])\n",
+        "print(\"\\n=== Confusion matrix (table) ===\")\n",
+        "print(cm_df)\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "PA5vvAdv5Ady",
+        "outputId": "131dcabc-c07e-4c64-be86-f4999e09b8d4"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "train: (22983, 13)\n",
+            "val  : (4925, 13)\n",
+            "test : (4925, 13)\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/sklearn/linear_model/_logistic.py:1247: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.7. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "C=0.01 → val acc=0.4625\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/sklearn/linear_model/_logistic.py:1247: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.7. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "C=0.1 → val acc=0.4629\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/sklearn/linear_model/_logistic.py:1247: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.7. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "C=1 → val acc=0.4631\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/sklearn/linear_model/_logistic.py:1247: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.7. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "C=10 → val acc=0.4631\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/sklearn/linear_model/_logistic.py:1247: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.7. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "C=100 → val acc=0.4631\n",
+            "\n",
+            "[선택] val 기준으로 가장 좋은 C는 1 (acc=0.4631)\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/usr/local/lib/python3.12/dist-packages/sklearn/linear_model/_logistic.py:1247: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.7. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "\n",
+            "=== Confusion matrix (raw) ===\n",
+            "[[216  44 147 100 133 186]\n",
+            " [ 67 447  32 104 111 101]\n",
+            " [ 68   8 474  71  42  79]\n",
+            " [101 151 123 297  96  47]\n",
+            " [102 117  53 109 279 113]\n",
+            " [ 96  73  59  45  58 576]]\n",
+            "\n",
+            "행 = 실제 장르, 열 = 예측 장르\n",
+            "labels: [0 1 2 3 4 5]\n",
+            "\n",
+            "=== Confusion matrix (table) ===\n",
+            "        pred_0  pred_1  pred_2  pred_3  pred_4  pred_5\n",
+            "true_0     216      44     147     100     133     186\n",
+            "true_1      67     447      32     104     111     101\n",
+            "true_2      68       8     474      71      42      79\n",
+            "true_3     101     151     123     297      96      47\n",
+            "true_4     102     117      53     109     279     113\n",
+            "true_5      96      73      59      45      58     576\n"
+          ]
+        }
+      ]
+    }
+  ]
+}
